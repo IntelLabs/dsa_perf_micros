@@ -744,3 +744,27 @@ do_results(struct tcfg *tcfg)
 	calc_ops_rate(tcfg);
 	calc_drain_latency(tcfg);
 }
+
+int
+test_barrier(struct tcfg *tcfg, bool err)
+{
+	__builtin_ia32_sfence();
+
+	if (err)
+		tcfg->td->err = err;
+
+	if (tcfg->nb_cpus == 1)
+		return err;
+
+	pthread_mutex_lock(&tcfg->td->mutex);
+	tcfg->td->barrier_cnt++;
+	if (tcfg->td->barrier_cnt < tcfg->nb_cpus)
+		pthread_cond_wait(&tcfg->td->cv, &tcfg->td->mutex);
+	else {
+		tcfg->td->barrier_cnt = 0;
+		pthread_cond_broadcast(&tcfg->td->cv);
+	}
+	pthread_mutex_unlock(&tcfg->td->mutex);
+
+	return tcfg->td->err;
+}

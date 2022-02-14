@@ -141,7 +141,9 @@ test_memcpy(struct tcfg_cpu *tcpu)
 		}
 	}
 
+	do_cache_ops(tcpu);
 	tcpu->cycles = 0;
+	test_barrier(tcfg, 0);
 
 	for (i = 0; i < tcfg->iter; i++) {
 		uint64_t c;
@@ -151,7 +153,17 @@ test_memcpy(struct tcfg_cpu *tcpu)
 		delta = tcpu->delta;
 		src1 = tcpu->src1;
 		src2 = tcpu->src2;
-		do_cache_ops(tcpu);
+
+		/*
+		 * If cpus > 1, then you can either measure the BW for a
+                 * single buffer for a single iteration or if the number
+		 * iterations is > 1 then use a working set such that for a single threaded
+		 * config nb_bufs * blen exceeds the L2 size for LLC BW measurement or
+		 * nb_cpus * nb_bufs * blen exceeds total L2 + LLC size for memory BW
+		 * measurement. Halve the sizes for MT.
+		 */
+		if (tcfg->nb_cpus == 1)
+			do_cache_ops(tcpu);
 
 		for (j = 0; j < tcfg->nb_bufs; j++) {
 
@@ -194,6 +206,8 @@ test_memcpy(struct tcfg_cpu *tcpu)
 			src2 += off;
 			delta += tcfg->delta_rec_size/sizeof(*delta);
 		}
+
+		tcpu->curr_iter++;
 	}
 
 	if (tcfg->iter)

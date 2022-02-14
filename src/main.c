@@ -105,30 +105,6 @@ init_devtlb(struct tcfg_cpu *tcpu)
 	return 0;
 }
 
-static int
-test_barrier(struct tcfg *tcfg, bool err)
-{
-	__builtin_ia32_sfence();
-
-	if (err)
-		tcfg->td->err = err;
-
-	if (tcfg->nb_cpus == 1)
-		return err;
-
-	pthread_mutex_lock(&tcfg->td->mutex);
-	tcfg->td->barrier_cnt++;
-	if (tcfg->td->barrier_cnt < tcfg->nb_cpus)
-		pthread_cond_wait(&tcfg->td->cv, &tcfg->td->mutex);
-	else {
-		tcfg->td->barrier_cnt = 0;
-		pthread_cond_broadcast(&tcfg->td->cv);
-	}
-	pthread_mutex_unlock(&tcfg->td->mutex);
-
-	return tcfg->td->err;
-}
-
 static inline struct dsa_completion_record *
 comp_rec(struct tcfg_cpu *tcpu, int r)
 {
@@ -830,19 +806,24 @@ test_run(struct tcfg *tcfg)
 	}
 
 	if (tcfg->iter == ~0U) {
-
+		bool err;
 		uint64_t iter_bytes =  tcfg->nb_bufs * tcfg->blen;
+
 		while (1) {
-			bool err;
 			float bw;
 
 			sleep(tcfg->tval_secs);
 			bw = (iter_count(tcfg) * iter_bytes)/(1E9 * tcfg->tval_secs);
 
-			for (i = 0, err = false; !err && i < tcfg->nb_cpus; i++)
-				err = !!tcfg->td[i].err;
-			if (err)
-				break;
+			for (i = 0, err = false; i < tcfg->nb_cpus; i++) {
+				struct tcfg_cpu *tcpu = &tcfg->tcpu[i];
+
+				err = !!tcpu->err;
+				if (err) {
+					ERR("Err on cpu %d: cpu num %d err %d\n", i, tcpu->cpu_num, tcpu->err);
+					break;
+				}
+			}
 
 			fprintf(stdout, "BW %f GB\n", bw);
 		}
